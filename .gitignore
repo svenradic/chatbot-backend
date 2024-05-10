@@ -1,0 +1,18 @@
+# Build output directories
+.vs/
+bin/
+obj/
+
+# Visual Studio user-specific files
+*.suo
+*.user
+*.userprefs
+
+# Visual Studio Code settings
+.vscode/
+
+# Entity Framework Core migration files
+**/Migrations/*.cs
+**/Migrations/*.Designer.cs
+**/Migrations/*.resx
+.github
