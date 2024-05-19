@@ -9,15 +9,14 @@ namespace chatbot_backend.Models
     {
         [Key]
         public int Id { get; set; }
-        public DateTime Date { get; set; } = DateTime.Now;
-        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
         public string Role { get; set; }
-        [Required]
         public string Content { get; set; }
-        public string? UserId { get; set; }
-        [ForeignKey("UserId")]
+        public int? ThreadId {  get; set; }
+        [ForeignKey("ThreadId")]
+
         [ValidateNever]
-        public ApplicationUser? User { get; set; }
+        public Models.Thread Thread { get; set; }
 
     }
 }

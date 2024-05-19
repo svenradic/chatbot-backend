@@ -7,11 +7,16 @@ using Microsoft.AspNetCore.CookiePolicy;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
 builder.Services.AddRazorPages();
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 	options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -25,31 +30,26 @@ builder.Services.AddSingleton<OpenAIHelper>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowSpecificOrigins",
+    options.AddPolicy("AllowAllOrigins",
         builder =>
         {
             builder
-                .WithOrigins("http://localhost:5173",
-                             "http://localhost:7030") // Add the origins you trust
-                .AllowCredentials() // Allow credentials
+                .AllowAnyOrigin() // Add the origins you trust
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         });
 });
 
-builder.Services.AddControllersWithViews().AddJsonOptions(options =>
-{
-    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-});
 
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.ExpireTimeSpan = TimeSpan.FromDays(30); // Set cookie expiration time
     options.Cookie.SameSite = SameSiteMode.None; // Allow cross-site cookies
-    options.Cookie.SecurePolicy = CookieSecurePolicy.None; // Require HTTPS for the cookie
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Require HTTPS for the cookie
     options.SlidingExpiration = true; // Renew the cookie expiration on each request
 });
+
 
 var app = builder.Build();
 
@@ -65,9 +65,11 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("AllowSpecificOrigins");
+app.UseCors("AllowAllOrigins");
+
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");

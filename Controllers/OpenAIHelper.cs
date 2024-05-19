@@ -1,4 +1,5 @@
-﻿using chatbot_backend.Models;
+﻿using chatbot_backend.DTOs;
+using chatbot_backend.Models;
 using Newtonsoft.Json;
 using System.Linq;
 using System.Security.Claims;
@@ -15,7 +16,7 @@ namespace chatbot_backend.Controllers
         {
             
         }
-        public async Task<Message> ProcessMessagesToChatGPT(List<Message> messages, string? userId)
+        public async Task<Message> ProcessMessagesToChatGPT(List<Message> messages, int? threadId)
         {
             try
             {
@@ -58,13 +59,13 @@ namespace chatbot_backend.Controllers
                     dynamic data = JsonConvert.DeserializeObject(responseData);
 
                     Message message = new Message();
-                    if(userId != null)
+                    if(threadId != null)
                     {
                         message = new Message
                         {
                             Role = "assistent",
                             Content = data.choices[0].message.content,
-                            UserId = userId
+                            ThreadId = threadId
                         };
                     }
                     else
@@ -76,16 +77,7 @@ namespace chatbot_backend.Controllers
                         };
                     }
 
-                    /*
-                    foreach (var choice in data.choices)
-                    {
-                        newMessages.Add(new Message
-                        {
-                            Role = "assistent",
-                            Content = choice.message.content
-                        });
-                    }
-                    */
+                    
                     return message;
                 }
             }

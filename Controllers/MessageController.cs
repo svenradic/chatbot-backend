@@ -1,17 +1,22 @@
 ﻿using System.Security.Claims;
 using chatbot_backend.Data;
+using chatbot_backend.DTOs;
+using chatbot_backend.Mappers;
 using chatbot_backend.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using Thread = chatbot_backend.Models.Thread;
 
 namespace chatbot_backend.Controllers
 {
     [Route("api/message/")]
     [ApiController]
+    [EnableCors("AllowAllOrigins")]
     public class MessageController : Controller
     {
         private readonly ApplicationDbContext db;
@@ -31,14 +36,10 @@ namespace chatbot_backend.Controllers
             this.openAIHelper = openAIHelper;
         }
 
-        public void SaveMessageTODb(Message message)
-        {
-            db.Messages.Add(message);
-        }
-
         [HttpGet("current-user")]
         public async Task<ActionResult<ApplicationUser>> GetUser()
         {
+            
             try
             {
                 if (userManager == null)
@@ -61,15 +62,29 @@ namespace chatbot_backend.Controllers
                     return StatusCode(StatusCodes.Status500InternalServerError, "User not found");
                 }
                 var startDate = DateTime.Today.AddDays(-7);
-                var messages = await db.Messages.Where(m => m.UserId == userId && m.Date.Date >= startDate.Date).ToListAsync();
-                currentUser.Messages = messages;
-                return Ok(JsonConvert.SerializeObject(currentUser));
+                var user = currentUser.ToUserResponse();
+                user.Threads = new List<ThreadResponse>();
+                var threads = db.Threads.Where(t => t.UserId == userId).Select(t => t.ToThreadResponse()).ToList();
+                if(threads.Count > 0)
+                {
+                    user.Threads = threads;
+                    foreach (var thread in user.Threads)
+                    {
+                        var messages = db.Messages.Where(m => m.ThreadId == thread.Id).Select(m => m.ToMessageResponse()).ToList();
+                        thread.Messages = messages;
+                    }
+                }
+
+                
+                return Ok(user);
             
             }
             catch(Exception e)
             {
                 return StatusCode(500, $"Internal server error: {e.Message}");
             }
+            
+            
            
         }
 
@@ -91,22 +106,87 @@ namespace chatbot_backend.Controllers
            
         }
 
-        [HttpPost("process-messages")]
-        public async Task<ActionResult<List<Message>>> ProcessMessagesToChatGPT([FromBody] List<Message> messages)
+        [HttpPost("create-thread")]
+        public async Task<IActionResult> CreateThread()
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if(userId == null)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "User not signed in");
+            }
+
+            Thread newThread = new Thread
+            {
+                Name = "New thread",
+                UserId = userId,
+                
+            };
+
+            db.Threads.Add(newThread);
+            await db.SaveChangesAsync();
+            var threadDTO = newThread.ToThreadResponse();
+            threadDTO.Messages = new List<MessageResponse>();
+            return Ok(threadDTO);
+        }
+
+        [HttpPost("process-messages/{threadId?}")]
+        public async Task<ActionResult<List<Message>>> ProcessMessagesToChatGPT([FromBody] List<Message> messages, [FromRoute] int? threadId)
         {
             try
             {
-                db.Messages.Add(messages.Last());
+                if (!signInManager.IsSignedIn(User))
+                {
+                    db.Messages.Add(messages.Last());
+                    await db.SaveChangesAsync();
+                    if(threadId < 0)
+                    {
+                        threadId = null;
+                    }
 
-                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                Message message = await
-                    openAIHelper.ProcessMessagesToChatGPT(messages, userId);
+                    Message message = await
+                        openAIHelper.ProcessMessagesToChatGPT(messages, threadId);
 
-                db.Messages.Add(message);
-                await db.SaveChangesAsync();
+                    db.Messages.Add(message);
+                    await db.SaveChangesAsync();
 
-                messages.Add(message);
-                return Ok(JsonConvert.SerializeObject(messages));
+                    messages.Add(message);
+
+                    var messagesDTO = messages.Select(s => s.ToMessageResponse()).ToList();
+                    return Ok(messagesDTO);
+                }
+                else
+                {
+                    var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var thread = db.Threads.Find(threadId);
+
+                    if (thread == null)
+                    {
+                        return NotFound();
+                    }
+
+                    if (!(userId == thread.UserId))
+                    {
+                        return BadRequest();
+                    }
+
+                    var messagesToProcess = db.Messages.Where(m => m.ThreadId == thread.Id).ToList();
+
+                    messagesToProcess.Add(messages.Last());
+                    db.Messages.Add(messages.Last());
+                    await db.SaveChangesAsync();
+
+                    Message message = await
+                       openAIHelper.ProcessMessagesToChatGPT(messagesToProcess, threadId);
+                    db.Messages.Add(message);
+
+                    await db.SaveChangesAsync();
+                    messages.Add(message);
+
+                    var messagesDTO = messages.Select(s => s.ToMessageResponse()).ToList();
+                    return Ok(messagesDTO);
+                }
+
+               
             }
             catch (Exception ex)
             {
